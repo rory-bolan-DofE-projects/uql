@@ -9,6 +9,9 @@ version = '1.0-SNAPSHOT'
 repositories {
     mavenCentral()
 }
+run {
+    standardInput = System.in
+}
 
 dependencies {
     testImplementation platform('org.junit:junit-bom:5.10.0')
@@ -22,4 +25,9 @@ test {
 }
 application {
     mainClass.set("app.belgarion.java.Main")
+}
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }

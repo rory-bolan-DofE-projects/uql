@@ -1,6 +1,10 @@
 package app.belgarion.java;
 
+
+
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Objects;
 
 import static app.belgarion.java.Database.*;
 
@@ -11,9 +15,11 @@ public class Main  {
 
 
     public static void main(String[] args) throws IOException {
-        if (args.length < 2) {
-            System.err.println("Missing command line arguments");
-            System.exit(1);
+
+
+        if (Arrays.equals(args, new String[]{})) {
+            CLI();
+            System.exit(0);
         }
         String command = args[0];
         String file = args[1];
@@ -27,7 +33,7 @@ public class Main  {
                 System.exit(1);
             }
             if (!file.endsWith(".udb")) {
-                System.err.printf("File '%s' does not end with .udb%n\n", file);
+                System.err.printf("File '%s' does not end with .udb\n", file);
                 System.exit(1);
             }
             New(file);
@@ -40,7 +46,7 @@ public class Main  {
                 System.err.printf("File '%s' does not end with .udb%n", file);
                 System.exit(1);
             }
-            CLI(file);
+            
         }
 
     }

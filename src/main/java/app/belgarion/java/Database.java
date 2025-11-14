@@ -90,7 +90,34 @@ public class Database {
         Files.move(tempFile.toPath(), Path.of(fileName), StandardCopyOption.REPLACE_EXISTING);
         System.out.println("Added table '" + name + "' to " + fileName);
     }
-    static void CLI(String fileName)  throws IOException {
+    static void getAll(String fileName) throws IOException {
+        if (!fileName.endsWith(".udb")) {
+            if (fileName.contains(".")) {
+                fileName = fileName.substring(0, fileName.lastIndexOf("."));
+                fileName = fileName + ".udb";
+            }
+
+        }
+        try (ZipFile zipFile = new ZipFile(fileName)) {
+            for (ZipEntry entry : Collections.list(zipFile.entries())) {
+                StringBuilder contents = new StringBuilder();
+                String line;
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(zipFile.getInputStream(entry)))) {
+                    while ((line = br.readLine()) != null) {
+                        contents.append(line).append("\n");
+                    }
+                }
+                System.out.printf(
+                        "---------------\nname: %s\nsize: %s\ncontents: \n%s\n",
+                        entry.getName(),
+                        entry.getSize(),
+                        contents
+                );
+            }
+        }
+        Console console =  System.console();
+    }
+    static void CLI()  throws IOException {
         for (;;) {
             System.out.print(">>> ");
             Scanner scanner = new Scanner(System.in);
@@ -102,26 +129,21 @@ public class Database {
                     .replaceAll(">", "")
                     .replaceAll("<", "")
                     .trim();
-            if (line.startsWith("load")) {
+            if (line.startsWith("new")) {
+                if (!Character.isWhitespace(chars[3])) throw new IncorrectSyntaxException("structure of load command must be new <database name>");
+
+                String file = line.substring(4);
+                if (!file.endsWith(".udb")) {
+                    if (file.contains(".")) {
+                        file = file.substring(0, file.lastIndexOf("."));
+                        file = file + ".udb";
+                    }
+                }
+                New(file);
+            } else if (line.startsWith("dump")) {
                 if (!Character.isWhitespace(chars[4])) throw new IncorrectSyntaxException("structure of load command must be load <database file>");
                 String file = line.substring(5, line.length() - 1);
-                try (
-                        ZipFile zipFile = new ZipFile(file);
-                        ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(file))
-                        ) {
-                    zipFile.stream().forEach(entry -> {
-                        System.out.println("Entry: " + entry.getName());
-                        try (InputStream is = zipFile.getInputStream(entry)) {
-                            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-                            String lineFromReader;
-                            while ((lineFromReader = reader.readLine()) != null) {
-                                System.out.println(lineFromReader);
-                            }
-                        } catch (IOException e) {
-                            System.out.println(e.getMessage());
-                        }
-                    });
-                }
+                getAll(file);
             }
         }
     }
