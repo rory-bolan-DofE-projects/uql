@@ -115,7 +115,6 @@ public class Database {
                 );
             }
         }
-        Console console =  System.console();
     }
     static void CLI()  throws IOException {
         for (;;) {
