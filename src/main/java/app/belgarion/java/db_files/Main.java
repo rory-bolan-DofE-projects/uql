@@ -1,11 +1,11 @@
-package app.belgarion.java;
+package app.belgarion.java.db_files;
 
 
 
 import java.io.IOException;
 import java.util.Arrays;
 
-import static app.belgarion.java.Database.*;
+import static app.belgarion.java.db_files.Database.*;
 
 
 
