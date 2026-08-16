@@ -5,17 +5,21 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.zip.*;
 import com.google.gson.*;
-import org.jetbrains.annotations.Nullable;
 
 public class Database {
     public static final class CSV {
         public static final char SEP = 31;
     }
     private static final Gson gson = new Gson();
+    public static class MalformedRequestException extends Exception {
+        public MalformedRequestException(String message) {
+            super(message);
+        }
+    }
     public static void New(String name) throws IOException {
         name = name.trim();
         if (!name.endsWith(".udb")) {
-            System.err.printf("Filename %s isn't the UDB file type", name);
+            System.err.printf("Filename %s isn't the UDB file type\n", name);
             System.exit(1);
         }
 
@@ -47,8 +51,10 @@ public class Database {
             return false;
         }
     }
-    public static @Nullable String newTable(String dbName, String name, Column... columns) throws IOException {
-
+    public static void newTable(String dbName, String name, Column... columns) throws IOException, MalformedRequestException {
+        if (containsTable(dbName, name)) {
+            throw new MalformedRequestException("Table " + name + " already exists in " + dbName);
+        }
         String baseName = name.endsWith(".csv")
                 ? name.substring(0, name.length() - 4)
                 : name;
@@ -137,9 +143,26 @@ public class Database {
         Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
 
         System.out.println("Added table '" + baseName + "' to " + dbName);
-        return(null);
     }
-
+    public static ColumnType getColumnType(String type) {
+        return switch (type.toLowerCase()) {
+            case "text" -> ColumnType.TEXT;
+            case "autoincrement_id" -> ColumnType.AUTOINCREMENT_ID;
+            case "number" -> ColumnType.NUMBER;
+            case "boolean" -> ColumnType.BOOLEAN;
+            default -> null;
+        };
+    }
+    public static void createTable(List<String> arguments) throws IOException, MalformedRequestException {
+        String filename = arguments.removeFirst();
+        String table_name = arguments.removeFirst();
+        ArrayList<Column> cols = new ArrayList<>();
+        for (String str : arguments) {
+            String[] splat = str.split(":");
+            cols.add(new Column(getColumnType(splat[1]), splat[0]));
+        }
+        Database.newTable(filename, table_name, cols.toArray(Column[]::new));
+    }
     public static void getAll(String fileName) throws IOException {
         if (!fileName.endsWith(".udb")) {
             if (fileName.contains(".")) {
@@ -157,6 +180,7 @@ public class Database {
                         contents.append(line).append("\n");
                     }
                 }
+                contents = new StringBuilder(contents.toString().replace(CSV.SEP, '|'));
                 System.out.printf(
                         "---------------\nname: %s\nsize: %s\ncontents: \n%s\n",
                         entry.getName(),
@@ -229,5 +253,50 @@ public class Database {
         return lines.toArray(String[][]::new);
 
     }
+    public static void insertIntoTable(String dbName, String tableName, List<List<String>> rows) throws IOException, MalformedRequestException {
+        if (!dbName.endsWith(".udb")) {
+            int dot_index = dbName.lastIndexOf('.');
+            if (dot_index != -1) {
+                dbName = dbName.substring(0, dot_index);
+            }
+            dbName = dbName + ".udb";
+        }
 
+        if (!containsTable(dbName, tableName)) {
+            throw new MalformedRequestException("Table " + tableName + " does not exist in " + dbName);
+        }
+
+        String dataEntryName = tableName + ".data";
+        File tempFile = File.createTempFile("temp_udb_insert", ".zip");
+
+        try (
+                ZipFile zipFile = new ZipFile(dbName);
+                ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempFile))
+        ) {
+            for (ZipEntry oldEntry : Collections.list(zipFile.entries())) {
+                ZipEntry newEntry = new ZipEntry(oldEntry.getName());
+                zos.putNextEntry(newEntry);
+
+                try (InputStream is = zipFile.getInputStream(oldEntry)) {
+                    is.transferTo(zos);
+                }
+
+                if (oldEntry.getName().equals(dataEntryName)) {
+                    StringBuilder newContent = new StringBuilder();
+                    String sep = String.valueOf(CSV.SEP);
+
+                    for (List<String> row : rows) {
+                        newContent.append(String.join(sep, row)).append("\n");
+                    }
+
+                    zos.write(newContent.toString().getBytes());
+                }
+
+                zos.closeEntry();
+            }
+        }
+
+        Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("Inserted " + rows.size() + " rows into '" + tableName + "' in " + dbName);
+    }
 }
