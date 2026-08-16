@@ -22,7 +22,7 @@ public class Database {
             System.err.printf("Filename %s isn't the UDB file type\n", name);
             System.exit(1);
         }
-
+        Files.deleteIfExists(Path.of(name));
         try (FileOutputStream fos = new FileOutputStream(name);
              ZipOutputStream zos = new ZipOutputStream(fos)) {
 

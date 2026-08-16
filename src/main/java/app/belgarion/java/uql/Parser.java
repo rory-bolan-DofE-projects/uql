@@ -26,7 +26,7 @@ public class Parser {
         } else if (file_line.startsWith("create-table ")) {
             return createTable(file_line.substring("create-table ".length()).trim());
         } else if (file_line.startsWith("insert into ")) {
-            return addToTable(file_line.substring("insert ".length()).trim());
+            return addToTable(file_line.substring("insert into ".length()).trim());
         }
         return new Response(new ArrayList<>(), Optional.empty(), false);
     }
@@ -121,7 +121,7 @@ public class Parser {
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 
-    private static Response addToTable(String query) {
+    private static Response addToTable(String query) throws Database.MalformedRequestException, IOException {
         char[] chars = query.toCharArray();
         // full command should be insert into database.udb/table value1 value2 value3 value4...
         int index = 0;
@@ -136,13 +136,22 @@ public class Parser {
         index++;
         // we are now pointing at the first letter of the table name
         StringBuilder tablenameBuilder = new StringBuilder();
-        while (Character.isWhitespace(chars[index])) {
+        while (!Character.isWhitespace(chars[index])) {
             tablenameBuilder.append(chars[index]);
             index++;
         }
         String tablename = tablenameBuilder.toString();
         index++;
+        StringBuilder valuestringbuilder = new StringBuilder();
         // we are now pointing to the first letter of the items to be added to the table
+        while (index < chars.length) {
+            valuestringbuilder.append(chars[index]);
+            index++;
+        }
+        ArrayList<String> innerList = new ArrayList<>(Arrays.asList(valuestringbuilder.toString().split(" ")));
+        ArrayList<List<String>> values = new ArrayList<>();
+        values.add(innerList);
+        Database.insertIntoTable(dbname, tablename, values);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 
