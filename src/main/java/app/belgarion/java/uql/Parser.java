@@ -1,6 +1,8 @@
 package app.belgarion.java.uql;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -10,18 +12,54 @@ import app.belgarion.java.db_files.Database;
 import org.jetbrains.annotations.NotNull;
 
 public class Parser {
-    public static void main(String[] args) throws IncorrectQuerySyntaxException, MalformedTableException, IOException, Database.MalformedRequestException {
-        Response[] resp = execute(new String[]{"create-table ./test2.udb test2 key:autoincrement_id name:text age:number"});
+    public static String dbFile = "";
+
+    public static void main(String[] args) throws IOException, Database.MalformedRequestException, IncorrectQuerySyntaxException, MalformedTableException {
+        String dbName = "./test_database.udb";
+
+
+            // 1. Create the database file first so it exists on disk
+            Database.New(dbName);
+
+            // 2. Make SURE the load command includes the filename!
+            String[] testScript = new String[]{
+                    "load " + dbName, // This sets dbFile = "./test_database.udb"
+                    "create-table users id:number username:text email:text",
+                    "insert into users 1 belgarion user1@example.com",
+                    "insert into users 2 polgara user2@example.com",
+                    "insert into users 3 silk user3@example.com",
+                    "select all rows from users;",
+                    "select 2 rows from users;"
+            };
+
+            System.out.println("\n--- Starting Query Execution ---\n");
+            Response[] responses = execute(testScript);
+
+            for (int i = 0; i < testScript.length; i++) {
+                System.out.println("Command [" + (i + 1) + "]: " + testScript[i]);
+                System.out.println("Response:");
+                System.out.println(responses[i]);
+                System.out.println("-----------------------------------");
+            }
+
     }
+
     public static Response[] execute(String[] file_lines) throws IncorrectQuerySyntaxException, IOException, MalformedTableException, Database.MalformedRequestException {
         Response[] resp = new Response[file_lines.length];
+        if (!file_lines[0].trim().startsWith("load")) {
+            throw new IncorrectQuerySyntaxException("You must load a table first");
+        }
         for (int i = 0; i < file_lines.length; i++) {
             resp[i] = runOneLine(file_lines[i]);
         }
         return resp;
     }
+
     private static Response runOneLine(String file_line) throws IncorrectQuerySyntaxException, IOException, MalformedTableException, Database.MalformedRequestException {
-        if (file_line.startsWith("select ")) {
+        if (file_line.startsWith("load")) {
+            loadTable(file_line);
+            return new Response(new ArrayList<>(), Optional.empty(), true);
+        } else if (file_line.startsWith("select ")) {
             return select(file_line.substring("select ".length()).trim());
         } else if (file_line.startsWith("create-table ")) {
             return createTable(file_line.substring("create-table ".length()).trim());
@@ -30,128 +68,124 @@ public class Parser {
         }
         return new Response(new ArrayList<>(), Optional.empty(), false);
     }
+
     public static class IncorrectQuerySyntaxException extends Exception {
         private IncorrectQuerySyntaxException(String message) {
             super(message);
         }
     }
+
     private static Response select(String query) throws IncorrectQuerySyntaxException, IOException, MalformedTableException {
         char[] chars = query.toCharArray();
-        int index = 0, exponent = 1;
+        int index = 0;
 
-        while (Character.isWhitespace(chars[index])) index++;
+        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
+
         if (Character.isDigit(chars[index])) {
-            int fin = 0;
-            while (Character.isDigit(chars[index])) {
-                int digit = Integer.parseInt(String.valueOf(chars[index]));
-                int exponentiated = digit * exponent;
-                fin += exponentiated;
+            StringBuilder countStr = new StringBuilder();
+            while (index < chars.length && Character.isDigit(chars[index])) {
+                countStr.append(chars[index]);
                 index++;
-                exponent *= 10;
             }
-            do index++; while (Character.isWhitespace(chars[index]));
-            // calculated rows for selection
+            int rowCount = Integer.parseInt(countStr.toString());
+
+            while (index < chars.length && Character.isWhitespace(chars[index])) index++;
+
         /*
-        select 3 rows from table
+        select 3 rows from table_name;
                  ^
-         */
-            if (chars[index] != 'r') {
+        */
+            if (index >= chars.length || chars[index] != 'r') {
                 throw new IncorrectQuerySyntaxException("The structure of the query should be 'select x rows from table_name'");
             }
-            index += 10;
+            index += 10; // skip "rows from "
+
             StringBuilder table_name = new StringBuilder();
-            while (!Character.isWhitespace(chars[index])) {
+            while (index < chars.length && !Character.isWhitespace(chars[index]) && chars[index] != ';') {
                 table_name.append(chars[index]);
                 index++;
             }
-            /*
-            select 3 rows from table in filename
-                                    ^
-             */
-            index+=4;
-            /*
-            select 3 rows from table in filename;
-                                        ^
-             */
-            StringBuilder fileName = new StringBuilder();
-            while (chars[index] != ';') {
-                fileName.append(chars[index]);
-                index++;
+
+            String[][] csv = Database.readTable(dbFile, table_name.toString());
+            if (csv.length == 0) {
+                return new Response(new ArrayList<>(), Optional.empty(), false);
             }
 
-            String[][] csv = Database.readTable(fileName.toString(), table_name.toString());
-
-            // yes this is overcomplicated, but I really couldn't care less
-        } else {
-            // select all rows from table in file_name;
-            //        ^
-
-            index+=14;
-
-            StringBuilder table_name = new StringBuilder();
-            while (!Character.isWhitespace(chars[index])) {
-                table_name.append(chars[index]);
-                index++;
-            }
-            // select all rows from table in filename;
-            //                           ^
-            // needs to be:
-            // select all rows from table in filename;
-            //                               ^
-            index+=4;
-            StringBuilder filename = new StringBuilder();
-            while (Character.isWhitespace(chars[index])) index++;
-            while (chars[index] != ';') {
-                filename.append(chars[index]);
-                index++;
-            }
-            String[][] csv = Database.readTable(filename.toString(), table_name.toString());
             ArrayList<Row> rows = getRows(csv);
+
+            // Limit rows to the specified rowCount
+            if (rows.size() > rowCount) {
+                rows = new ArrayList<>(rows.subList(0, rowCount));
+            }
+
             ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
             return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
 
+        } else {
+            // select all rows from table_name;
+            index += 14; // skip "all rows from "
+
+            StringBuilder table_name = new StringBuilder();
+            while (index < chars.length && !Character.isWhitespace(chars[index]) && chars[index] != ';') {
+                table_name.append(chars[index]);
+                index++;
+            }
+
+            String[][] csv = Database.readTable(dbFile, table_name.toString());
+            if (csv.length == 0) {
+                return new Response(new ArrayList<>(), Optional.empty(), false);
+            }
+
+            ArrayList<Row> rows = getRows(csv);
+            ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
+            return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
         }
-        return new Response(new ArrayList<>(), Optional.empty(), false);
+    }
+
+    private static void loadTable(String query) throws IOException {
+        String dbname = query.trim().substring(4).trim();
+        if (!Files.exists(Path.of(dbname))) {
+            Database.New(dbname);
+        }
+        dbFile = dbname;
     }
 
     private static Response createTable(String query) throws IOException, Database.MalformedRequestException {
-        // query should be "filename table_name columns" and columns is name:type
         ArrayList<String> parameters = new ArrayList<>(List.of(query.split(" ")));
+        parameters.addFirst(dbFile);
         Database.createTable(parameters);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 
     private static Response addToTable(String query) throws Database.MalformedRequestException, IOException {
         char[] chars = query.toCharArray();
-        // full command should be insert into database.udb/table value1 value2 value3 value4...
+
         int index = 0;
-        while (Character.isWhitespace(chars[index])) index++;
-        // now this should point to the first letter of the database name
-        StringBuilder dbnamebuilder = new StringBuilder();
-        while (chars[index] != '/') {
-            dbnamebuilder.append(chars[index]);
-            index++;
-        }
-        String dbname = dbnamebuilder.toString();
-        index++;
-        // we are now pointing at the first letter of the table name
+        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
+
+        // We are now pointing at the first letter of the table name
         StringBuilder tablenameBuilder = new StringBuilder();
-        while (!Character.isWhitespace(chars[index])) {
+        while (index < chars.length && !Character.isWhitespace(chars[index])) {
             tablenameBuilder.append(chars[index]);
             index++;
         }
         String tablename = tablenameBuilder.toString();
-        index++;
+
+        // Skip the spaces between the table name and the values
+        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
+
         StringBuilder valuestringbuilder = new StringBuilder();
-        // we are now pointing to the first letter of the items to be added to the table
+        // We are now pointing to the first letter of the items to be added to the table
         while (index < chars.length) {
             valuestringbuilder.append(chars[index]);
             index++;
         }
+
         ArrayList<String> innerList = new ArrayList<>(Arrays.asList(valuestringbuilder.toString().split(" ")));
         ArrayList<List<String>> values = new ArrayList<>();
         values.add(innerList);
-        Database.insertIntoTable(dbname, tablename, values);
+
+        Database.insertIntoTable(dbFile, tablename, values);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 

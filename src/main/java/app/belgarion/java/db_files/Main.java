@@ -4,14 +4,14 @@ package app.belgarion.java.db_files;
 
 import app.belgarion.java.uql.Parser;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-import static app.belgarion.java.db_files.Database.*;
+//import java.io.IOException;
+//import java.nio.file.Files;
+//import java.nio.file.Path;
+//import java.util.ArrayList;
+//import java.util.Arrays;
+//import java.util.List;
+//
+//import static app.belgarion.java.db_files.Database.*;
 
 
 
@@ -24,13 +24,14 @@ public class Main {
                     Database.New(dbName);
 
                     String[] queries = {
-                            "create-table " + dbName + " players id:autoincrement_id username:text score:number",
+                            "load test_game.udb",
+                            "create-table players id:autoincrement_id username:text score:number",
 
 
-                            "insert into " + dbName + "/players 1 BelgarionofRiva 2500",
-                            "insert into " + dbName + "/players 2 BelgarionofRiva2 3200",
+                            "insert into players 1 BelgarionofRiva 2500",
+                            "insert into players 2 BelgarionofRiva2 3200",
 
-                            "select all rows from players in " + dbName + ";"
+                            "select all rows from players;"
                     };
 
 
