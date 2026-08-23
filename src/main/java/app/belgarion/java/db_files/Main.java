@@ -4,6 +4,8 @@ package app.belgarion.java.db_files;
 
 import app.belgarion.java.uql.Parser;
 
+import java.io.IOException;
+
 //import java.io.IOException;
 //import java.nio.file.Files;
 //import java.nio.file.Path;
@@ -16,27 +18,18 @@ import app.belgarion.java.uql.Parser;
 
 
 public class Main {
-    public static void run(String[] args) {
-                try {
-                    String dbName = "test_game.udb";
+    public static void run(String dbName, String[] args) throws IOException, Database.MalformedRequestException, Parser.IncorrectQuerySyntaxException, Parser.MalformedTableException {
+
+
 
                     System.out.println("--- 1. Creating Database ---");
                     Database.New(dbName);
 
-                    String[] queries = {
-                            "load test_game.udb",
-                            "create-table players id:autoincrement_id username:text score:number",
 
-
-                            "insert into players 1 BelgarionofRiva 2500",
-                            "insert into players 2 BelgarionofRiva2 3200",
-
-                            "select all rows from players;"
-                    };
 
 
                     System.out.println("\n2. Executing UQL Queries");
-                    Parser.Response[] responses = Parser.execute(queries);
+                    Parser.Response[] responses = Parser.execute(args);
 
 
                     System.out.println("\n3. Query Results");
@@ -48,10 +41,7 @@ public class Main {
                     System.out.println("4. Internal Database Dump");
                     Database.getAll(dbName);
 
-                } catch (Exception e) {
-                    System.err.println("An error occurred during testing:");
-                    e.printStackTrace();
-                }
+
 
 
 //        if (Arrays.equals(args, new String[]{})) {
@@ -97,8 +87,17 @@ public class Main {
 
 
 
-    public static void main(String[] args){
+    public static void main(String[] args) throws Database.MalformedRequestException, Parser.IncorrectQuerySyntaxException, Parser.MalformedTableException, IOException {
+        String[] queries = {
+                "load test_game.udb",
+                "create-table players id:autoincrement_id username:text score:number",
 
-        run(args);
+
+                "insert into players 1 BelgarionofRiva 2500",
+                "insert into players 2 BelgarionofRiva2 3200",
+
+                "select all rows from players where id>1"
+        };
+        run("test_game.udb", queries);
     }
 }

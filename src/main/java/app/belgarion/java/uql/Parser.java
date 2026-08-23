@@ -87,14 +87,14 @@ public class Parser {
                 countStr.append(chars[index]);
                 index++;
             }
-            int rowCount = Integer.parseInt(countStr.toString());
+            int maxrows = Integer.parseInt(countStr.toString());
 
             while (index < chars.length && Character.isWhitespace(chars[index])) index++;
 
-        /*
-        select 3 rows from table_name;
-                 ^
-        */
+            /*
+            select 3 rows from table_name;
+                     ^
+            */
             if (index >= chars.length || chars[index] != 'r') {
                 throw new IncorrectQuerySyntaxException("The structure of the query should be 'select x rows from table_name'");
             }
@@ -106,42 +106,123 @@ public class Parser {
                 index++;
             }
 
-            String[][] csv = Database.readTable(dbFile, table_name.toString());
+            String cleanTableName = table_name.toString().trim();
+            String[][] csv = Database.readTable(dbFile, cleanTableName);
             if (csv.length == 0) {
                 return new Response(new ArrayList<>(), Optional.empty(), false);
             }
 
             ArrayList<Row> rows = getRows(csv);
+            ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
 
-            // Limit rows to the specified rowCount
-            if (rows.size() > rowCount) {
-                rows = new ArrayList<>(rows.subList(0, rowCount));
+
+            rows = filter(query, columns, rows);
+
+
+            if (rows.size() > maxrows) {
+                rows = new ArrayList<>(rows.subList(0, maxrows));
             }
 
-            ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
             return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
 
         } else {
-            // select all rows from table_name;
+            // select all rows from table_name
             index += 14; // skip "all rows from "
 
             StringBuilder table_name = new StringBuilder();
-            while (index < chars.length && !Character.isWhitespace(chars[index]) && chars[index] != ';') {
-                table_name.append(chars[index]);
-                index++;
+            for (int i = index; i < chars.length; i++) {
+                table_name.append(chars[i]);
             }
 
-            String[][] csv = Database.readTable(dbFile, table_name.toString());
+            // regex i totally didnt steal that gets just the table name without anything before or after idk
+            String table_name_cleaned = table_name.toString().trim().split("\\s+")[0].replace(";", "");
+
+            String[][] csv = Database.readTable(dbFile, table_name_cleaned);
             if (csv.length == 0) {
                 return new Response(new ArrayList<>(), Optional.empty(), false);
             }
 
             ArrayList<Row> rows = getRows(csv);
             ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
+
+
+            rows = filter(query, columns, rows);
+
             return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
         }
     }
 
+    // private method that parses where clauses (stuff like "select all rows from table where id>1")
+    private static ArrayList<Row> filter(String query, ArrayList<String> columns, ArrayList<Row> rows) {
+        String lowerQuery = query.toLowerCase();
+        if (!lowerQuery.contains(" where ")) {
+            return rows;
+        }
+
+        int wherebitlocation = lowerQuery.indexOf(" where ") + 7;
+        String chunk = query.substring(wherebitlocation).replace(";", "").trim();
+
+        String operator;
+        if (chunk.contains(">=")) operator = ">=";
+        else if (chunk.contains("<=")) operator = "<=";
+        else if (chunk.contains(">")) operator = ">";
+        else if (chunk.contains("<")) operator = "<";
+        else if (chunk.contains("=")) operator = "=";
+        else return rows;
+
+        String[] parts = chunk.split(operator, 2);
+        if (parts.length != 2) {
+            return rows;
+        }
+
+        String columnwanted = parts[0].trim();
+        String valuewanted = parts[1].trim();
+
+        int columnindex = columns.indexOf(columnwanted);
+        if (columnindex == -1) {
+            return rows;
+        }
+
+        ArrayList<Row> filtered = new ArrayList<>();
+        for (Row row : rows) {
+            if (row.columns().size() <= columnindex) continue;
+
+            String currentvalue = row.columns().get(columnindex);
+            if (doacondition(currentvalue, operator, valuewanted)) {
+                filtered.add(row);
+            }
+        }
+
+        return filtered;
+    }
+
+    private static boolean doacondition(String value, String op, String intendedvalue) {
+        // try numbers first
+        try {
+            double cellNum = Double.parseDouble(value);
+            double targetNum = Double.parseDouble(intendedvalue);
+
+            return switch (op) {
+                case "="  -> cellNum == targetNum;
+                case ">"  -> cellNum > targetNum;
+                case "<"  -> cellNum < targetNum;
+                case ">=" -> cellNum >= targetNum;
+                case "<=" -> cellNum <= targetNum;
+                default   -> false;
+            };
+        } catch (NumberFormatException e) {
+            // if it aint a number (for example: "select 3 rows from table where job=\"software_engineer\"")
+            int cmp = value.compareTo(intendedvalue);
+            return switch (op) {
+                case "="  -> value.equals(intendedvalue);
+                case ">"  -> cmp > 0;
+                case "<"  -> cmp < 0;
+                case ">=" -> cmp >= 0;
+                case "<=" -> cmp <= 0;
+                default   -> false;
+            };
+        }
+    }
     private static void loadTable(String query) throws IOException {
         String dbname = query.trim().substring(4).trim();
         if (!Files.exists(Path.of(dbname))) {
