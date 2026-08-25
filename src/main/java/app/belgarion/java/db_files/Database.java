@@ -53,7 +53,7 @@ public class Database {
     }
     public static void newTable(String dbName, String name, Column... columns) throws IOException, MalformedRequestException {
         if (containsTable(dbName, name)) {
-            throw new MalformedRequestException("Table " + name + " already exists in " + dbName);
+            return;
         }
         String baseName = name.endsWith(".csv")
                 ? name.substring(0, name.length() - 4)

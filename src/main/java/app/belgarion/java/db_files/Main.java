@@ -4,7 +4,13 @@ package app.belgarion.java.db_files;
 
 import app.belgarion.java.uql.Parser;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
+import java.nio.Buffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 
 //import java.io.IOException;
 //import java.nio.file.Files;
@@ -88,16 +94,25 @@ public class Main {
 
 
     public static void main(String[] args) throws Database.MalformedRequestException, Parser.IncorrectQuerySyntaxException, Parser.MalformedTableException, IOException {
-        String[] queries = {
-                "load test_game.udb",
-                "create-table players id:autoincrement_id username:text score:number",
+        if (args.length == 0) return;
+        if (!Files.exists(Path.of(args[0]))) return;
+        ArrayList<String> list = new ArrayList<>();
+        BufferedReader reader;
 
+        reader = new BufferedReader(new FileReader(args[0]));
+        String line = reader.readLine();
 
-                "insert into players 1 BelgarionofRiva 2500",
-                "insert into players 2 BelgarionofRiva2 3200",
+        while (line != null) {
+            if (!line.trim().isEmpty()) list.add(line);
+            line = reader.readLine();
+        }
 
-                "select all rows from players where id>1"
-        };
-        run("test_game.udb", queries);
+        reader.close();
+        String[] strings = list.toArray(String[]::new);
+        Parser.Response[] resps = Parser.execute(strings);
+        for (int i = 0; i < resps.length; i++) {
+            System.out.println("Query " + (i + 1) + ":");
+            System.out.println(resps[i].toString());
+        }
     }
 }
