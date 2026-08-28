@@ -65,9 +65,7 @@ public class Database {
                 ZipFile zipFile = new ZipFile(dbName);
                 ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempFile))
         ) {
-            // -----------------------------
-            // 1. Copy all entries *except* schema.json
-            // -----------------------------
+
             for (ZipEntry oldEntry : Collections.list(zipFile.entries())) {
                 if (oldEntry.getName().equals("schema.json")) continue;
 
@@ -81,9 +79,7 @@ public class Database {
                 zos.closeEntry();
             }
 
-            // -----------------------------
-            // 2. Load and update schema.json
-            // -----------------------------
+
             JsonObject root;
             {
                 ZipEntry schemaEntry = zipFile.getEntry("schema.json");
@@ -98,21 +94,18 @@ public class Database {
 
             JsonArray tables = root.getAsJsonArray("tables");
 
-            // Prevent duplicates
+
             boolean exists = tables.asList().stream()
                     .anyMatch(e -> e.getAsString().equals(baseName));
             if (!exists) {
                 tables.add(baseName);
             }
 
-            // Write updated schema.json
             zos.putNextEntry(new ZipEntry("schema.json"));
             zos.write(gson.toJson(root).getBytes());
             zos.closeEntry();
 
-            // -----------------------------
-            // 3. Write header file (baseName.header.json)
-            // -----------------------------
+
             zos.putNextEntry(new ZipEntry(baseName + ".header.json"));
 
             JsonObject header = new JsonObject();
@@ -139,7 +132,6 @@ public class Database {
             zos.closeEntry();
         }
 
-        // Atomically replace old file
         Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
 
         System.out.println("Added table '" + baseName + "' to " + dbName);

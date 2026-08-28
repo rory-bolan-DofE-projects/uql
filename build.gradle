@@ -19,6 +19,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     implementation 'com.google.code.gson:gson:2.13.2'
     implementation 'org.jetbrains:annotations:24.0.1'
+    implementation 'com.sparkjava:spark-core:2.9.4'
 }
 
 

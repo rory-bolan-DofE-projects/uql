@@ -9,6 +9,10 @@ import java.util.List;
 import java.util.Optional;
 
 import app.belgarion.java.db_files.Database;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonSerializer;
 import org.jetbrains.annotations.NotNull;
 
 public class Parser {
@@ -18,12 +22,10 @@ public class Parser {
         String dbName = "./test_database.udb";
 
 
-            // 1. Create the database file first so it exists on disk
             Database.New(dbName);
 
-            // 2. Make SURE the load command includes the filename!
             String[] testScript = new String[]{
-                    "load " + dbName, // This sets dbFile = "./test_database.udb"
+                    "load " + dbName,
                     "create-table users id:number username:text email:text",
                     "insert into users 1 belgarion user1@example.com",
                     "insert into users 2 polgara user2@example.com",
@@ -308,6 +310,16 @@ public class Parser {
                 finalResponse.append('\n');
             }
             return finalResponse.toString();
+        }
+        public static String responsesToJson(Response[] responses) {
+            Gson gson = new GsonBuilder()
+                    .registerTypeAdapter(Optional.class, (JsonSerializer<Optional<?>>) (src, typeOfSrc, context) ->
+                            src.isPresent() ? context.serialize(src.get()) : JsonNull.INSTANCE
+                    )
+                    .setPrettyPrinting()
+                    .create();
+
+            return gson.toJson(responses);
         }
     }
 
