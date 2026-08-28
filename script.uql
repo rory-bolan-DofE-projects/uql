@@ -1,0 +1,18 @@
+load test_game.udb
+create-table players id:autoincrement_id username:text score:number
+
+
+insert into players 1 BelgarionofRiva 2500
+insert into players 2 BelgarionofRiva2 3200
+insert into players 3 BelgarionofRiva3 1000
+select all rows from players
+
+update players set score=9999 where id=1
+
+select all rows from players
+
+delete from players where score<2000
+
+select all rows from players
+delete from players
+select all rows from players

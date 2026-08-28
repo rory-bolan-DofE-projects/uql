@@ -51,7 +51,7 @@ public class Database {
             return false;
         }
     }
-    public static void newTable(String dbName, String name, Column... columns) throws IOException, MalformedRequestException {
+    public static void newTable(String dbName, String name, Column... columns) throws IOException {
         if (containsTable(dbName, name)) {
             return;
         }
@@ -290,5 +290,117 @@ public class Database {
 
         Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
         System.out.println("Inserted " + rows.size() + " rows into '" + tableName + "' in " + dbName);
+    }
+    public static void updateRows(String dbName, String tableName, Map<Integer, List<String>> newRowsByIndex) throws IOException, MalformedRequestException {
+        if (!dbName.endsWith(".udb")) {
+            int dot_index = dbName.lastIndexOf('.');
+            if (dot_index != -1) {
+                dbName = dbName.substring(0, dot_index);
+            }
+            dbName = dbName + ".udb";
+        }
+
+        if (!containsTable(dbName, tableName)) {
+            throw new MalformedRequestException("Table " + tableName + " does not exist in " + dbName);
+        }
+
+        String dataEntryName = tableName + ".data";
+        File tempFile = File.createTempFile("temp_udb_update", ".zip");
+
+        try (
+                ZipFile zipFile = new ZipFile(dbName);
+                ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempFile))
+        ) {
+            for (ZipEntry oldEntry : Collections.list(zipFile.entries())) {
+                ZipEntry newEntry = new ZipEntry(oldEntry.getName());
+                zos.putNextEntry(newEntry);
+
+                if (oldEntry.getName().equals(dataEntryName)) {
+                    String sep = String.valueOf(CSV.SEP);
+                    StringBuilder newContent = new StringBuilder();
+                    int rowindex = 0;
+
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(zipFile.getInputStream(oldEntry)))) {
+                        String line = br.readLine();
+                        if (line != null) newContent.append(line).append("\n");
+
+                        while ((line = br.readLine()) != null) {
+                            List<String> replacementRow = newRowsByIndex.get(rowindex);
+                            if (replacementRow != null) {
+                                newContent.append(String.join(sep, replacementRow)).append("\n");
+                            } else {
+                                newContent.append(line).append("\n");
+                            }
+                            rowindex++;
+                        }
+                    }
+
+                    zos.write(newContent.toString().getBytes());
+                } else {
+                    try (InputStream is = zipFile.getInputStream(oldEntry)) {
+                        is.transferTo(zos);
+                    }
+                }
+
+                zos.closeEntry();
+            }
+        }
+
+        Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("Updated " + newRowsByIndex.size() + " rows in '" + tableName + "' in " + dbName);
+    }
+    public static void deleteRows(String dbName, String tableName, Set<Integer> rowIndexesToDelete) throws IOException, MalformedRequestException {
+        if (!dbName.endsWith(".udb")) {
+            int dot_index = dbName.lastIndexOf('.');
+            if (dot_index != -1) {
+                dbName = dbName.substring(0, dot_index);
+            }
+            dbName = dbName + ".udb";
+        }
+
+        if (!containsTable(dbName, tableName)) {
+            throw new MalformedRequestException("Table " + tableName + " does not exist in " + dbName);
+        }
+
+        String dataEntryName = tableName + ".data";
+        File tempFile = File.createTempFile("temp_udb_delete", ".zip");
+
+        try (
+                ZipFile zipFile = new ZipFile(dbName);
+                ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempFile))
+        ) {
+            for (ZipEntry oldEntry : Collections.list(zipFile.entries())) {
+                ZipEntry newEntry = new ZipEntry(oldEntry.getName());
+                zos.putNextEntry(newEntry);
+
+                if (oldEntry.getName().equals(dataEntryName)) {
+                    StringBuilder newContent = new StringBuilder();
+                    int rowindex = 0;
+
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(zipFile.getInputStream(oldEntry)))) {
+                        String line = br.readLine();
+                        if (line != null) newContent.append(line).append("\n");
+
+                        while ((line = br.readLine()) != null) {
+                            if (!rowIndexesToDelete.contains(rowindex)) {
+                                newContent.append(line).append("\n");
+                            }
+                            rowindex++;
+                        }
+                    }
+
+                    zos.write(newContent.toString().getBytes());
+                } else {
+                    try (InputStream is = zipFile.getInputStream(oldEntry)) {
+                        is.transferTo(zos);
+                    }
+                }
+
+                zos.closeEntry();
+            }
+        }
+
+        Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("Deleted " + rowIndexesToDelete.size() + " rows from '" + tableName + "' in " + dbName);
     }
 }

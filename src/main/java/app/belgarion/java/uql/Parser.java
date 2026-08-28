@@ -5,8 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import app.belgarion.java.db_files.Database;
 import com.google.gson.Gson;
@@ -67,6 +71,10 @@ public class Parser {
             return createTable(file_line.substring("create-table ".length()).trim());
         } else if (file_line.startsWith("insert into ")) {
             return addToTable(file_line.substring("insert into ".length()).trim());
+        } else if (file_line.startsWith("update ")) {
+            return update(file_line.substring("update ".length()).trim());
+        } else if (file_line.startsWith("delete from ")) {
+            return deleteFrom(file_line.substring("delete from ".length()).trim());
         }
         return new Response(new ArrayList<>(), Optional.empty(), false);
     }
@@ -269,6 +277,125 @@ public class Parser {
         values.add(innerList);
 
         Database.insertIntoTable(dbFile, tablename, values);
+        return new Response(new ArrayList<>(), Optional.empty(), true);
+    }
+
+    private static String[] parseCondition(String chunk) {
+        String operator;
+        if (chunk.contains(">=")) operator = ">=";
+        else if (chunk.contains("<=")) operator = "<=";
+        else if (chunk.contains(">")) operator = ">";
+        else if (chunk.contains("<")) operator = "<";
+        else if (chunk.contains("=")) operator = "=";
+        else return null;
+
+        String[] parts = chunk.split(operator, 2);
+        if (parts.length != 2) return null;
+
+        return new String[]{parts[0].trim(), operator, parts[1].trim()};
+    }
+
+    private static Response update(String query) throws IncorrectQuerySyntaxException, IOException, Database.MalformedRequestException {
+        char[] chars = query.toCharArray();
+        int index = 0;
+        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
+
+        StringBuilder tablenameBuilder = new StringBuilder();
+        while (index < chars.length && !Character.isWhitespace(chars[index])) {
+            tablenameBuilder.append(chars[index]);
+            index++;
+        }
+        String tablename = tablenameBuilder.toString();
+
+        String rest = query.substring(index).trim();
+        if (!rest.toLowerCase().startsWith("set ")) {
+            throw new IncorrectQuerySyntaxException("The structure of the query should be 'update table_name set col=value where ...'");
+        }
+        rest = rest.substring(4).trim();
+
+        String setPart = rest;
+        String wherePart = "";
+        int whereIdx = rest.toLowerCase().indexOf(" where ");
+        if (whereIdx != -1) {
+            setPart = rest.substring(0, whereIdx).trim();
+            wherePart = rest.substring(whereIdx + 7).trim().replace(";", "");
+        } else {
+            setPart = setPart.replace(";", "").trim();
+        }
+
+        String[][] csv = Database.readTable(dbFile, tablename);
+        if (csv.length == 0) {
+            return new Response(new ArrayList<>(), Optional.empty(), false);
+        }
+        ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
+
+        Map<Integer, String> assignments = new HashMap<>();
+        for (String assignment : setPart.split(",")) {
+            String[] bits = assignment.trim().split("=", 2);
+            if (bits.length != 2) continue;
+            int colindex = columns.indexOf(bits[0].trim());
+            if (colindex == -1) continue;
+            assignments.put(colindex, bits[1].trim());
+        }
+
+        String[] wherebits = wherePart.isEmpty() ? null : parseCondition(wherePart);
+
+        Map<Integer, List<String>> newrows = new HashMap<>();
+        for (int i = 1; i < csv.length; i++) {
+            String[] row = csv[i];
+            boolean matches = true;
+            if (wherebits != null) {
+                int colindex = columns.indexOf(wherebits[0]);
+                matches = colindex != -1 && colindex < row.length && doacondition(row[colindex], wherebits[1], wherebits[2]);
+            }
+            if (!matches) continue;
+
+            String[] newrow = row.clone();
+            for (Map.Entry<Integer, String> entry : assignments.entrySet()) {
+                if (entry.getKey() < newrow.length) newrow[entry.getKey()] = entry.getValue();
+            }
+            newrows.put(i - 1, Arrays.asList(newrow));
+        }
+
+        Database.updateRows(dbFile, tablename, newrows);
+        return new Response(new ArrayList<>(), Optional.empty(), true);
+    }
+
+    private static Response deleteFrom(String query) throws IOException, Database.MalformedRequestException {
+        char[] chars = query.toCharArray();
+        int index = 0;
+        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
+
+        StringBuilder tablenameBuilder = new StringBuilder();
+        while (index < chars.length && !Character.isWhitespace(chars[index])) {
+            tablenameBuilder.append(chars[index]);
+            index++;
+        }
+        String tablename = tablenameBuilder.toString();
+
+        String rest = query.substring(index).trim();
+        String wherePart = rest.toLowerCase().startsWith("where ") ? rest.substring(6).trim().replace(";", "") : "";
+
+        String[][] csv = Database.readTable(dbFile, tablename);
+        if (csv.length == 0) {
+            return new Response(new ArrayList<>(), Optional.empty(), false);
+        }
+        ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
+
+        String[] wherebits = wherePart.isEmpty() ? null : parseCondition(wherePart);
+
+        Set<Integer> rowstodelete = new HashSet<>();
+        for (int i = 1; i < csv.length; i++) {
+            String[] row = csv[i];
+            boolean matches = true;
+            if (wherebits != null) {
+                int colindex = columns.indexOf(wherebits[0]);
+                matches = colindex != -1 && colindex < row.length && doacondition(row[colindex], wherebits[1], wherebits[2]);
+            }
+            if (matches) rowstodelete.add(i - 1);
+        }
+
+        Database.deleteRows(dbFile, tablename, rowstodelete);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 

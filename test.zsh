@@ -14,6 +14,9 @@ json_payload=$(jq -n \
   --arg select_all "select all rows from users;" \
   --arg select_limit "select 2 rows from users;" \
   --arg select_filter "select all rows from users where id>1;" \
+  --arg update_cmd "update users set email=belgarion@example.com where id=1;" \
+  --arg delete_cmd "delete from users where id=3;" \
+  --arg select_after "select all rows from users;" \
   '{
     requests: [
       $load_cmd,
@@ -23,7 +26,10 @@ json_payload=$(jq -n \
       $insert3,
       $select_all,
       $select_limit,
-      $select_filter
+      $select_filter,
+      $update_cmd,
+      $delete_cmd,
+      $select_after
     ]
   }')
 
