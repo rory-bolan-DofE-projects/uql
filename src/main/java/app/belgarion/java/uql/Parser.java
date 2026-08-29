@@ -62,21 +62,23 @@ public class Parser {
     }
 
     private static Response runOneLine(String file_line) throws IncorrectQuerySyntaxException, IOException, MalformedTableException, Database.MalformedRequestException {
-        if (file_line.startsWith("load")) {
-            loadTable(file_line);
-            return new Response(new ArrayList<>(), Optional.empty(), true);
-        } else if (file_line.startsWith("select ")) {
-            return select(file_line.substring("select ".length()).trim());
-        } else if (file_line.startsWith("create-table ")) {
-            return createTable(file_line.substring("create-table ".length()).trim());
-        } else if (file_line.startsWith("insert into ")) {
-            return addToTable(file_line.substring("insert into ".length()).trim());
-        } else if (file_line.startsWith("update ")) {
-            return update(file_line.substring("update ".length()).trim());
-        } else if (file_line.startsWith("delete from ")) {
-            return deleteFrom(file_line.substring("delete from ".length()).trim());
+        Words words = new Words(tokenize(file_line));
+        if (!words.hasNext()) {
+            return new Response(new ArrayList<>(), Optional.empty(), false);
         }
-        return new Response(new ArrayList<>(), Optional.empty(), false);
+        String keyword = words.peek().toLowerCase();
+        return switch (keyword) {
+            case "load" -> {
+                loadTable(words);
+                yield new Response(new ArrayList<>(), Optional.empty(), true);
+            }
+            case "select" -> select(words);
+            case "create-table" -> createTable(words);
+            case "insert" -> addToTable(words);
+            case "update" -> update(words);
+            case "delete" -> deleteFrom(words);
+            default -> new Response(new ArrayList<>(), Optional.empty(), false);
+        };
     }
     private static List<String> tokenize(String line) {
         List<String> tokens = new ArrayList<>();
@@ -145,83 +147,34 @@ public class Parser {
         }
     }
 
-    private static Response select(String query) throws IncorrectQuerySyntaxException, IOException, MalformedTableException {
-        char[] chars = query.toCharArray();
-        int index = 0;
-
-        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
-
-        if (Character.isDigit(chars[index])) {
-            StringBuilder countStr = new StringBuilder();
-            while (index < chars.length && Character.isDigit(chars[index])) {
-                countStr.append(chars[index]);
-                index++;
-            }
-            int maxrows = Integer.parseInt(countStr.toString());
-
-            while (index < chars.length && Character.isWhitespace(chars[index])) index++;
-
-            /*
-            select 3 rows from table_name;
-                     ^
-            */
-            if (index >= chars.length || chars[index] != 'r') {
-                throw new IncorrectQuerySyntaxException("The structure of the query should be 'select x rows from table_name'");
-            }
-            index += 10; // skip "rows from "
-
-            StringBuilder table_name = new StringBuilder();
-            while (index < chars.length && !Character.isWhitespace(chars[index]) && chars[index] != ';') {
-                table_name.append(chars[index]);
-                index++;
-            }
-
-            String cleanTableName = table_name.toString().trim();
-            String[][] csv = Database.readTable(dbFile, cleanTableName);
-            if (csv.length == 0) {
-                return new Response(new ArrayList<>(), Optional.empty(), false);
-            }
-
-            ArrayList<Row> rows = getRows(csv);
-            ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
-
-
-            rows = filter(query, columns, rows);
-
-
-            if (rows.size() > maxrows) {
-                rows = new ArrayList<>(rows.subList(0, maxrows));
-            }
-
-            return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
-
+    private static Response select(Words words) throws IncorrectQuerySyntaxException, IOException, MalformedTableException {
+        words.expect("select");
+        int maxrows = Integer.MAX_VALUE;
+        if (words.peek().equalsIgnoreCase("all")) {
+            words.next();
         } else {
-            // select all rows from table_name
-            index += 14; // skip "all rows from "
-
-            StringBuilder table_name = new StringBuilder();
-            for (int i = index; i < chars.length; i++) {
-                table_name.append(chars[i]);
-            }
-
-            // regex i totally didnt steal that gets just the table name without anything before or after idk
-            String table_name_cleaned = table_name.toString().trim().split("\\s+")[0].replace(";", "");
-
-            String[][] csv = Database.readTable(dbFile, table_name_cleaned);
-            if (csv.length == 0) {
-                return new Response(new ArrayList<>(), Optional.empty(), false);
-            }
-
-            ArrayList<Row> rows = getRows(csv);
-            ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
-
-
-            rows = filter(query, columns, rows);
-
-            return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
+            maxrows = Integer.parseInt(words.next());
         }
+        words.expect("rows");
+        words.expect("from");
+        String tableName = words.next();
+        String[] wherebits = null;
+        if (words.hasNext() && words.peek().equalsIgnoreCase("where")) {
+            words.next();
+            wherebits = parseCondition(words);
+        }
+        String[][] csv = Database.readTable(dbFile, tableName);
+        if (csv.length == 0) {
+            return new Response(new ArrayList<>(), Optional.empty(), false);
+        }
+        ArrayList<Row> rows = getRows(csv);
+        ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
+        rows = filter(wherebits, columns, rows);
+        if (rows.size() > maxrows) {
+            rows = new ArrayList<>(rows.subList(0, maxrows));
+        }
+        return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
     }
-
     // private method that parses where clauses (stuff like "select all rows from table where id>1")
     private static ArrayList<Row> filter(String query, ArrayList<String> columns, ArrayList<Row> rows) {
         String lowerQuery = query.toLowerCase();
@@ -293,14 +246,14 @@ public class Parser {
             };
         }
     }
-    private static void loadTable(String query) throws IOException {
-        String dbname = query.trim().substring(4).trim();
+    private static void loadTable(Words words) throws IOException, IncorrectQuerySyntaxException {
+        words.expect("load");
+        String dbname = words.next();
         if (!Files.exists(Path.of(dbname))) {
             Database.New(dbname);
         }
         dbFile = dbname;
     }
-
     private static Response createTable(String query) throws IOException, Database.MalformedRequestException {
         ArrayList<String> parameters = new ArrayList<>(List.of(query.split(" ")));
         parameters.addFirst(dbFile);
