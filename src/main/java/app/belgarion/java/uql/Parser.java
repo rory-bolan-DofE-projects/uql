@@ -78,7 +78,67 @@ public class Parser {
         }
         return new Response(new ArrayList<>(), Optional.empty(), false);
     }
-
+    private static List<String> tokenize(String line) {
+        List<String> tokens = new ArrayList<>();
+        int i = 0;
+        while (i < line.length()) {
+            char c = line.charAt(i);
+            if (Character.isWhitespace(c)) {
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                int end = line.indexOf('"', i + 1);
+                if (end == -1) end = line.length();
+                tokens.add(line.substring(i + 1, end));
+                i = end + 1;
+                continue;
+            }
+            if (c == '>' || c == '<' || c == '=') {
+                if (i + 1 < line.length() && line.charAt(i + 1) == '=') {
+                    tokens.add(line.substring(i, i + 2));
+                    i += 2;
+                } else {
+                    tokens.add(String.valueOf(c));
+                    i++;
+                }
+                continue;
+            }
+            if (c == ',' || c == ':' || c == ';') {
+                tokens.add(String.valueOf(c));
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < line.length() && !Character.isWhitespace(line.charAt(i)) && ",:;\"><=".indexOf(line.charAt(i)) == -1) {
+                i++;
+            }
+            tokens.add(line.substring(start, i));
+        }
+        return tokens;
+    }
+    private static class Words {
+        private final List<String> tokens;
+        private int pos = 0;
+        private Words(List<String> tokens) {
+            this.tokens = tokens;
+        }
+        private boolean hasNext() {
+            return pos < tokens.size();
+        }
+        private String peek() {
+            return hasNext() ? tokens.get(pos) : "";
+        }
+        private String next() {
+            return hasNext() ? tokens.get(pos++) : "";
+        }
+        private void expect(String word) throws IncorrectQuerySyntaxException {
+            String got = next();
+            if (!got.equalsIgnoreCase(word)) {
+                throw new IncorrectQuerySyntaxException("Expected '" + word + "' but found '" + got + "'");
+            }
+        }
+    }
     public static class IncorrectQuerySyntaxException extends Exception {
         private IncorrectQuerySyntaxException(String message) {
             super(message);
