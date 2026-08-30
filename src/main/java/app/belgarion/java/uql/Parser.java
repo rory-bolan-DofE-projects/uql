@@ -176,46 +176,18 @@ public class Parser {
         return new Response(columns, Optional.of(rows.toArray(Row[]::new)), true);
     }
     // private method that parses where clauses (stuff like "select all rows from table where id>1")
-    private static ArrayList<Row> filter(String query, ArrayList<String> columns, ArrayList<Row> rows) {
-        String lowerQuery = query.toLowerCase();
-        if (!lowerQuery.contains(" where ")) {
-            return rows;
-        }
-
-        int wherebitlocation = lowerQuery.indexOf(" where ") + 7;
-        String chunk = query.substring(wherebitlocation).replace(";", "").trim();
-
-        String operator;
-        if (chunk.contains(">=")) operator = ">=";
-        else if (chunk.contains("<=")) operator = "<=";
-        else if (chunk.contains(">")) operator = ">";
-        else if (chunk.contains("<")) operator = "<";
-        else if (chunk.contains("=")) operator = "=";
-        else return rows;
-
-        String[] parts = chunk.split(operator, 2);
-        if (parts.length != 2) {
-            return rows;
-        }
-
-        String columnwanted = parts[0].trim();
-        String valuewanted = parts[1].trim();
-
-        int columnindex = columns.indexOf(columnwanted);
-        if (columnindex == -1) {
-            return rows;
-        }
-
+    private static ArrayList<Row> filter(String[] wherebits, ArrayList<String> columns, ArrayList<Row> rows) {
+        if (wherebits == null) return rows;
+        int columnindex = columns.indexOf(wherebits[0]);
+        if (columnindex == -1) return rows;
         ArrayList<Row> filtered = new ArrayList<>();
         for (Row row : rows) {
             if (row.columns().size() <= columnindex) continue;
-
             String currentvalue = row.columns().get(columnindex);
-            if (doacondition(currentvalue, operator, valuewanted)) {
+            if (doacondition(currentvalue, wherebits[1], wherebits[2])) {
                 filtered.add(row);
             }
         }
-
         return filtered;
     }
 
@@ -254,149 +226,102 @@ public class Parser {
         }
         dbFile = dbname;
     }
-    private static Response createTable(String query) throws IOException, Database.MalformedRequestException {
-        ArrayList<String> parameters = new ArrayList<>(List.of(query.split(" ")));
-        parameters.addFirst(dbFile);
+    private static Response createTable(Words words) throws IOException, Database.MalformedRequestException, IncorrectQuerySyntaxException {
+        words.expect("create-table");
+        String tableName = words.next();
+        ArrayList<String> parameters = new ArrayList<>();
+        parameters.add(dbFile);
+        parameters.add(tableName);
+        while (words.hasNext() && !words.peek().equals(";")) {
+            String colName = words.next();
+            words.expect(":");
+            String colType = words.next();
+            parameters.add(colName + ":" + colType);
+        }
         Database.createTable(parameters);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 
-    private static Response addToTable(String query) throws Database.MalformedRequestException, IOException {
-        char[] chars = query.toCharArray();
-
-        int index = 0;
-        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
-
-        // We are now pointing at the first letter of the table name
-        StringBuilder tablenameBuilder = new StringBuilder();
-        while (index < chars.length && !Character.isWhitespace(chars[index])) {
-            tablenameBuilder.append(chars[index]);
-            index++;
+    private static Response addToTable(Words words) throws IOException, Database.MalformedRequestException, IncorrectQuerySyntaxException {
+        words.expect("insert");
+        words.expect("into");
+        String tableName = words.next();
+        ArrayList<String> values = new ArrayList<>();
+        while (words.hasNext() && !words.peek().equals(";")) {
+            values.add(words.next());
         }
-        String tablename = tablenameBuilder.toString();
-
-        // Skip the spaces between the table name and the values
-        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
-
-        StringBuilder valuestringbuilder = new StringBuilder();
-        // We are now pointing to the first letter of the items to be added to the table
-        while (index < chars.length) {
-            valuestringbuilder.append(chars[index]);
-            index++;
-        }
-
-        ArrayList<String> innerList = new ArrayList<>(Arrays.asList(valuestringbuilder.toString().split(" ")));
-        ArrayList<List<String>> values = new ArrayList<>();
-        values.add(innerList);
-
-        Database.insertIntoTable(dbFile, tablename, values);
+        ArrayList<List<String>> rows = new ArrayList<>();
+        rows.add(values);
+        Database.insertIntoTable(dbFile, tableName, rows);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 
-    private static String[] parseCondition(String chunk) {
-        String operator;
-        if (chunk.contains(">=")) operator = ">=";
-        else if (chunk.contains("<=")) operator = "<=";
-        else if (chunk.contains(">")) operator = ">";
-        else if (chunk.contains("<")) operator = "<";
-        else if (chunk.contains("=")) operator = "=";
-        else return null;
-
-        String[] parts = chunk.split(operator, 2);
-        if (parts.length != 2) return null;
-
-        return new String[]{parts[0].trim(), operator, parts[1].trim()};
+    private static String[] parseCondition(Words words) {
+        String column = words.next();
+        String operator = words.next();
+        String value = words.next();
+        return new String[]{column, operator, value};
     }
 
-    private static Response update(String query) throws IncorrectQuerySyntaxException, IOException, Database.MalformedRequestException {
-        char[] chars = query.toCharArray();
-        int index = 0;
-        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
-
-        StringBuilder tablenameBuilder = new StringBuilder();
-        while (index < chars.length && !Character.isWhitespace(chars[index])) {
-            tablenameBuilder.append(chars[index]);
-            index++;
+    private static Response update(Words words) throws IncorrectQuerySyntaxException, IOException, Database.MalformedRequestException {
+        words.expect("update");
+        String tableName = words.next();
+        words.expect("set");
+        Map<String, String> assignmentsByName = new HashMap<>();
+        while (true) {
+            String col = words.next();
+            words.expect("=");
+            String value = words.next();
+            assignmentsByName.put(col, value);
+            if (!words.peek().equals(",")) break;
+            words.next(); // eat the comma
         }
-        String tablename = tablenameBuilder.toString();
-
-        String rest = query.substring(index).trim();
-        if (!rest.toLowerCase().startsWith("set ")) {
-            throw new IncorrectQuerySyntaxException("The structure of the query should be 'update table_name set col=value where ...'");
+        String[] wherebits = null;
+        if (words.hasNext() && words.peek().equalsIgnoreCase("where")) {
+            words.next();
+            wherebits = parseCondition(words);
         }
-        rest = rest.substring(4).trim();
-
-        String setPart = rest;
-        String wherePart = "";
-        int whereIdx = rest.toLowerCase().indexOf(" where ");
-        if (whereIdx != -1) {
-            setPart = rest.substring(0, whereIdx).trim();
-            wherePart = rest.substring(whereIdx + 7).trim().replace(";", "");
-        } else {
-            setPart = setPart.replace(";", "").trim();
-        }
-
-        String[][] csv = Database.readTable(dbFile, tablename);
+        String[][] csv = Database.readTable(dbFile, tableName);
         if (csv.length == 0) {
             return new Response(new ArrayList<>(), Optional.empty(), false);
         }
         ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
-
         Map<Integer, String> assignments = new HashMap<>();
-        for (String assignment : setPart.split(",")) {
-            String[] bits = assignment.trim().split("=", 2);
-            if (bits.length != 2) continue;
-            int colindex = columns.indexOf(bits[0].trim());
-            if (colindex == -1) continue;
-            assignments.put(colindex, bits[1].trim());
+        for (Map.Entry<String, String> entry : assignmentsByName.entrySet()) {
+            int colindex = columns.indexOf(entry.getKey());
+            if (colindex != -1) assignments.put(colindex, entry.getValue());
         }
-
-        String[] wherebits = wherePart.isEmpty() ? null : parseCondition(wherePart);
-
         Map<Integer, List<String>> newrows = new HashMap<>();
         for (int i = 1; i < csv.length; i++) {
             String[] row = csv[i];
-            boolean matches = true;
             if (wherebits != null) {
                 int colindex = columns.indexOf(wherebits[0]);
-                matches = colindex != -1 && colindex < row.length && doacondition(row[colindex], wherebits[1], wherebits[2]);
+                boolean matches = colindex != -1 && colindex < row.length && doacondition(row[colindex], wherebits[1], wherebits[2]);
+                if (!matches) continue;
             }
-            if (!matches) continue;
-
             String[] newrow = row.clone();
             for (Map.Entry<Integer, String> entry : assignments.entrySet()) {
                 if (entry.getKey() < newrow.length) newrow[entry.getKey()] = entry.getValue();
             }
             newrows.put(i - 1, Arrays.asList(newrow));
         }
-
-        Database.updateRows(dbFile, tablename, newrows);
+        Database.updateRows(dbFile, tableName, newrows);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
-
-    private static Response deleteFrom(String query) throws IOException, Database.MalformedRequestException {
-        char[] chars = query.toCharArray();
-        int index = 0;
-        while (index < chars.length && Character.isWhitespace(chars[index])) index++;
-
-        StringBuilder tablenameBuilder = new StringBuilder();
-        while (index < chars.length && !Character.isWhitespace(chars[index])) {
-            tablenameBuilder.append(chars[index]);
-            index++;
+    private static Response deleteFrom(Words words) throws IncorrectQuerySyntaxException, IOException, Database.MalformedRequestException {
+        words.expect("delete");
+        words.expect("from");
+        String tableName = words.next();
+        String[] wherebits = null;
+        if (words.hasNext() && words.peek().equalsIgnoreCase("where")) {
+            words.next();
+            wherebits = parseCondition(words);
         }
-        String tablename = tablenameBuilder.toString();
-
-        String rest = query.substring(index).trim();
-        String wherePart = rest.toLowerCase().startsWith("where ") ? rest.substring(6).trim().replace(";", "") : "";
-
-        String[][] csv = Database.readTable(dbFile, tablename);
+        String[][] csv = Database.readTable(dbFile, tableName);
         if (csv.length == 0) {
             return new Response(new ArrayList<>(), Optional.empty(), false);
         }
         ArrayList<String> columns = new ArrayList<>(List.of(csv[0]));
-
-        String[] wherebits = wherePart.isEmpty() ? null : parseCondition(wherePart);
-
         Set<Integer> rowstodelete = new HashSet<>();
         for (int i = 1; i < csv.length; i++) {
             String[] row = csv[i];
@@ -407,8 +332,7 @@ public class Parser {
             }
             if (matches) rowstodelete.add(i - 1);
         }
-
-        Database.deleteRows(dbFile, tablename, rowstodelete);
+        Database.deleteRows(dbFile, tableName, rowstodelete);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
 
