@@ -3,7 +3,7 @@
 Over the past 7 or so months, I've been working on and off to build my own clone of SQL, and here it is.
 ***
 table of contents:
-- [syntax](#tyntax)
+- [syntax](#syntax)
 - [api](#api)
 - [how it works](#how-it-works)
 ***
