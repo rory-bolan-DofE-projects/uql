@@ -246,23 +246,47 @@ public class Parser {
         words.expect("insert");
         words.expect("into");
         String tableName = words.next();
-        ArrayList<String> values = new ArrayList<>();
+        ArrayList<String> suppliedValues = new ArrayList<>();
         while (words.hasNext() && !words.peek().equals(";")) {
-            values.add(words.next());
+            suppliedValues.add(words.next());
+        }
+        String[][] csv = Database.readTable(dbFile, tableName);
+        ArrayList<String> columnNames = csv.length > 0 ? new ArrayList<>(List.of(csv[0])) : new ArrayList<>();
+        Map<String, String> columnTypes = Database.getColumnTypes(dbFile, tableName);
+        ArrayList<String> row = new ArrayList<>();
+        int suppliedIndex = 0;
+        for (int i = 0; i < columnNames.size(); i++) {
+            String type = columnTypes.get(columnNames.get(i));
+            if ("AUTOINCREMENT_ID".equalsIgnoreCase(type)) {
+                row.add(nextautoincrement(csv, i));
+            } else if (suppliedIndex < suppliedValues.size()) {
+                row.add(suppliedValues.get(suppliedIndex++));
+            } else {
+                row.add("");
+            }
         }
         ArrayList<List<String>> rows = new ArrayList<>();
-        rows.add(values);
+        rows.add(row);
         Database.insertIntoTable(dbFile, tableName, rows);
         return new Response(new ArrayList<>(), Optional.empty(), true);
     }
-
     private static String[] parseCondition(Words words) {
         String column = words.next();
         String operator = words.next();
         String value = words.next();
         return new String[]{column, operator, value};
     }
-
+    private static String nextautoincrement(String[][] csv, int columnIndex) {
+        long highest = 0;
+        for (int i = 1; i < csv.length; i++) {
+            if (columnIndex >= csv[i].length) continue;
+            try {
+                long value = Long.parseLong(csv[i][columnIndex].trim());
+                if (value > highest) highest = value;
+            } catch (NumberFormatException ignored) {}
+        }
+        return String.valueOf(highest + 1);
+    }
     private static Response update(Words words) throws IncorrectQuerySyntaxException, IOException, Database.MalformedRequestException {
         words.expect("update");
         String tableName = words.next();
@@ -274,7 +298,7 @@ public class Parser {
             String value = words.next();
             assignmentsByName.put(col, value);
             if (!words.peek().equals(",")) break;
-            words.next(); // eat the comma
+            words.next();
         }
         String[] wherebits = null;
         if (words.hasNext() && words.peek().equalsIgnoreCase("where")) {

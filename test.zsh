@@ -8,9 +8,9 @@ echo "starting test"
 json_payload=$(jq -n \
   --arg load_cmd "load $DB_FILE" \
   --arg create_cmd "create-table users id:number username:text email:text" \
-  --arg insert1 "insert into users 1 belgarion user1@example.com" \
-  --arg insert2 "insert into users 2 polgara user2@example.com" \
-  --arg insert3 "insert into users 3 silk user3@example.com" \
+  --arg insert1 "insert into users belgarion user1@example.com" \
+  --arg insert2 "insert into users polgara user2@example.com" \
+  --arg insert3 "insert into users silk user3@example.com" \
   --arg select_all "select all rows from users;" \
   --arg select_limit "select 2 rows from users;" \
   --arg select_filter "select all rows from users where id>1;" \

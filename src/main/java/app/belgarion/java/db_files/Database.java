@@ -403,4 +403,26 @@ public class Database {
         Files.move(tempFile.toPath(), Path.of(dbName), StandardCopyOption.REPLACE_EXISTING);
         System.out.println("Deleted " + rowIndexesToDelete.size() + " rows from '" + tableName + "' in " + dbName);
     }
+    public static Map<String, String> getColumnTypes(String dbName, String tableName) throws IOException {
+        if (!dbName.endsWith(".udb")) {
+            int dot_index = dbName.lastIndexOf('.');
+            if (dot_index != -1) {
+                dbName = dbName.substring(0, dot_index);
+            }
+            dbName = dbName + ".udb";
+        }
+        try (ZipFile zipFile = new ZipFile(dbName)) {
+            ZipEntry entry = zipFile.getEntry(tableName + ".header.json");
+            if (entry == null) return new HashMap<>();
+            JsonObject header;
+            try (InputStream is = zipFile.getInputStream(entry)) {
+                header = gson.fromJson(new String(is.readAllBytes()), JsonObject.class);
+            }
+            Map<String, String> types = new HashMap<>();
+            for (Map.Entry<String, JsonElement> col : header.getAsJsonObject("columns").entrySet()) {
+                types.put(col.getKey(), col.getValue().getAsString());
+            }
+            return types;
+        }
+    }
 }
